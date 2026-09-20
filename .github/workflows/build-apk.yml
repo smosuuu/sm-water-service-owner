@@ -14,27 +14,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Owner Android project
+      - name: Find latest Owner APK ZIP
+        shell: bash
         run: |
-          rm -rf build-src
-          mkdir build-src
+          set -e
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+          ZIP_FILE="$(find . -maxdepth 1 -type f -name 'SM-RO-WATER-SERVICE-OWNER-*.zip' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Owner project ZIP not found"
+            echo "ERROR: Owner APK ZIP not found."
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP_FILE"
+          echo "Using ZIP:"
+          echo "$ZIP_FILE"
+
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Extract Owner Android project
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf build-src
+          mkdir -p build-src
+
           unzip -q "$ZIP_FILE" -d build-src
 
-          PROJECT_DIR=$(find build-src -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1 | xargs dirname)
+          PROJECT_DIR="$(find build-src -name settings.gradle -type f -print -quit | xargs dirname)"
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project not found"
+            echo "ERROR: settings.gradle not found."
             exit 1
           fi
+
+          echo "Android project:"
+          echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
@@ -42,20 +57,42 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: '8.7'
 
       - name: Build Owner Debug APK
+        shell: bash
         run: |
+          set -e
+
           cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug
+
+          echo "Building SM RO WATER SERVICE OWNER..."
+
+          gradle --no-daemon clean assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK generated successfully:"
+          ls -lh "$APK"
 
       - name: Upload Owner APK
         uses: actions/upload-artifact@v4
         with:
-          name: SM-RO-WATER-SERVICE-OWNER-debug
+          name: SM-RO-WATER-SERVICE-OWNER-v3
           path: build-src/**/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
